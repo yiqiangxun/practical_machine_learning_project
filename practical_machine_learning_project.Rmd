@@ -1,0 +1,99 @@
+# Practical Machine Learning Project
+### Yiqiang Xun
+
+
+## load packages we need
+```{r echo=TRUE}
+setwd("machine_learning_project")
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+```
+## read data and separate the training set
+```{r echo=TRUE}
+set.seed(233333)
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+myTraining <- training[inTrain, ]
+myTesting <- training[-inTrain, ]
+```
+## Raw Data Cleaning
+```{r echo=TRUE}
+nzv <- nearZeroVar(myTraining, saveMetrics=TRUE)
+myTraining <- myTraining[,nzv$nzv==FALSE]
+nzv<- nearZeroVar(myTesting,saveMetrics=TRUE)
+myTesting <- myTesting[,nzv$nzv==FALSE]
+myTraining <- myTraining[c(-1)]
+trainingV3 <- myTraining 
+for(i in 1:length(myTraining)) { 
+    if( sum( is.na( myTraining[, i] ) ) /nrow(myTraining) >= .6 ) { 
+        for(j in 1:length(trainingV3)) {
+            if( length( grep(names(myTraining[i]), names(trainingV3)[j]) ) ==1)  { 
+                trainingV3 <- trainingV3[ , -j] 
+            }   
+        } 
+    }
+}
+myTraining <- trainingV3
+rm(trainingV3)
+clean1 <- colnames(myTraining)
+clean2 <- colnames(myTraining[, -58]) 
+myTesting <- myTesting[clean1]
+testing <- testing[clean2]
+for (i in 1:length(testing) ) {
+    for(j in 1:length(myTraining)) {
+        if( length( grep(names(myTraining[i]), names(testing)[j]) ) ==1)  {
+            class(testing[j]) <- class(myTraining[i])
+        }      
+    }      
+}
+testing <- rbind(myTraining[2, -58] , testing) 
+testing <- testing[-1,]
+```
+## Method 1: Decision Tree
+```{r echo=TRUE}
+modFitA1 <- rpart(classe ~ ., data=myTraining, method="class")
+predictionsA1 <- predict(modFitA1, myTesting, type = "class")
+confusionMatrix(predictionsA1, myTesting$classe)
+```
+
+## Method 2: Random Forests
+```{r echo=TRUE}
+modFitB1 <- randomForest(classe ~. , data=myTraining)
+predictionsB1 <- predict(modFitB1, myTesting, type = "class")
+confusionMatrix(predictionsB1, myTesting$classe)
+```
+
+## Method 3: Generalized Boosted Regression
+```{r echo=TRUE}
+fitControl <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+gbmFit1 <- train(classe ~ ., data=myTraining, method = "gbm", trControl = fitControl, verbose = FALSE)
+gbmFinMod1 <- gbmFit1$finalModel
+gbmPredTest <- predict(gbmFit1, newdata=myTesting)
+confusionMatrix(gbmPredTest, myTesting$classe)
+```
+
+# Within these three methods, random forests get the most accurate result! Expected out of sample error is minimum!
+
+## use Random Forests method to predict the test data
+```{r echo=TRUE}
+predictionsB2 <- predict(modFitB1, testing, type = "class")
+predictionsB2
+```
+## Write the submission part
+```{r echo=TRUE}
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+pml_write_files(predictionsB2)
+```
